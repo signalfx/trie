@@ -18,7 +18,6 @@ type PathTrie struct {
 func NewPathTrie() *PathTrie {
 	return &PathTrie{
 		segmenter: PathSegmenter,
-		children:  make(map[string]*PathTrie),
 	}
 }
 
@@ -28,7 +27,7 @@ func (trie *PathTrie) Get(key string) interface{} {
 	node := trie
 	var prevPart string
 	var prevNode *PathTrie
-	for part, i := trie.segmenter(key, 0); ; part, i = trie.segmenter(key, i) {
+	for part, i := trie.segmenter(key, 0); part != ""; part, i = trie.segmenter(key, i) {
 		node = node.children[part]
 		if node == nil {
 			// sfx additional condition to return prev value
@@ -38,9 +37,6 @@ func (trie *PathTrie) Get(key string) interface{} {
 				}
 			}
 			return nil
-		}
-		if i == -1 {
-			break
 		}
 		prevNode = node
 		prevPart = part
@@ -55,16 +51,16 @@ func (trie *PathTrie) Get(key string) interface{} {
 // be distinguishable and will not be included in Walks.
 func (trie *PathTrie) Put(key string, value interface{}) bool {
 	node := trie
-	for part, i := trie.segmenter(key, 0); ; part, i = trie.segmenter(key, i) {
+	for part, i := trie.segmenter(key, 0); part != ""; part, i = trie.segmenter(key, i) {
 		child, _ := node.children[part]
 		if child == nil {
+			if node.children == nil {
+				node.children = map[string]*PathTrie{}
+			}
 			child = NewPathTrie()
 			node.children[part] = child
 		}
 		node = child
-		if i == -1 {
-			break
-		}
 	}
 	// does node have an existing value?
 	isNewVal := node.value == nil
@@ -78,15 +74,12 @@ func (trie *PathTrie) Put(key string, value interface{}) bool {
 func (trie *PathTrie) Delete(key string) bool {
 	var path []nodeStr // record ancestors to check later
 	node := trie
-	for part, i := trie.segmenter(key, 0); ; part, i = trie.segmenter(key, i) {
+	for part, i := trie.segmenter(key, 0); part != ""; part, i = trie.segmenter(key, i) {
 		path = append(path, nodeStr{part: part, node: node})
 		node = node.children[part]
 		if node == nil {
 			// node does not exist
 			return false
-		}
-		if i == -1 {
-			break
 		}
 	}
 	// delete the node value
@@ -98,8 +91,13 @@ func (trie *PathTrie) Delete(key string) bool {
 			parent := path[i].node
 			part := path[i].part
 			delete(parent.children, part)
-			if parent.value != nil || !parent.isLeaf() {
-				// parent has a value or has other children, stop
+			if !parent.isLeaf() {
+				// parent has other children, stop
+				break
+			}
+			parent.children = nil
+			if parent.value != nil {
+				// parent has a value, stop
 				break
 			}
 		}
@@ -113,6 +111,38 @@ func (trie *PathTrie) Delete(key string) bool {
 // The traversal is depth first with no guaranteed order.
 func (trie *PathTrie) Walk(walker WalkFunc) error {
 	return trie.walk("", walker)
+}
+
+// WalkPath iterates over each key/value in the path in trie from the root to
+// the node at the given key, calling the given walker function for each
+// key/value. If the walker function returns an error, the walk is aborted.
+func (trie *PathTrie) WalkPath(key string, walker WalkFunc) error {
+	// Get root value if one exists.
+	if trie.value != nil {
+		if err := walker("", trie.value); err != nil {
+			return err
+		}
+	}
+	for part, i := trie.segmenter(key, 0); ; part, i = trie.segmenter(key, i) {
+		if trie = trie.children[part]; trie == nil {
+			return nil
+		}
+		if trie.value != nil {
+			var k string
+			if i == -1 {
+				k = key
+			} else {
+				k = key[0:i]
+			}
+			if err := walker(k, trie.value); err != nil {
+				return err
+			}
+		}
+		if i == -1 {
+			break
+		}
+	}
+	return nil
 }
 
 // PathTrie node and the part string key of the child the path descends into.
