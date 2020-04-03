@@ -1,5 +1,7 @@
 package trie
 
+import "reflect"
+
 // RuneTrie is a trie of runes with string keys and interface{} values.
 // Note that internal nodes have nil values so a stored nil value will not
 // be distinguishable and will not be included in Walks.
@@ -22,7 +24,7 @@ func (trie *RuneTrie) Get(key string) interface{} {
 		node = node.children[r]
 		if node == nil {
 			// sfx additional condition to return prev value
-			if idx > 0 && key[idx-1] == '.' {
+			if idx > 0 && reflect.ValueOf(prevNode.value).String() == "*" {
 				return prevNode.value
 			}
 			return nil

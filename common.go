@@ -32,8 +32,3 @@ func PathSegmenter(path string, start int) (segment string, next int) {
 var (
 	segmenter = '/'
 )
-
-// SetSegmenter will be used to change default segmenter
-func SetSegmenter(r rune) {
-	segmenter = r
-}
