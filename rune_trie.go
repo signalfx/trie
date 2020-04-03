@@ -10,9 +10,7 @@ type RuneTrie struct {
 
 // NewRuneTrie allocates and returns a new *RuneTrie.
 func NewRuneTrie() *RuneTrie {
-	return &RuneTrie{
-		children: make(map[rune]*RuneTrie),
-	}
+	return new(RuneTrie)
 }
 
 // Get returns the value stored at the given key. Returns nil for internal
@@ -44,7 +42,10 @@ func (trie *RuneTrie) Put(key string, value interface{}) bool {
 	for _, r := range key {
 		child, _ := node.children[r]
 		if child == nil {
-			child = NewRuneTrie()
+			if node.children == nil {
+				node.children = map[rune]*RuneTrie{}
+			}
+			child = new(RuneTrie)
 			node.children[r] = child
 		}
 		node = child
@@ -71,15 +72,21 @@ func (trie *RuneTrie) Delete(key string) bool {
 	}
 	// delete the node value
 	node.value = nil
-	// if leaf, remove it from its parent's children map. Repeat for ancestor path.
+	// if leaf, remove it from its parent's children map. Repeat for ancestor
+	// path.
 	if node.isLeaf() {
 		// iterate backwards over path
 		for i := len(key) - 1; i >= 0; i-- {
 			parent := path[i].node
 			r := path[i].r
 			delete(parent.children, r)
-			if parent.value != nil || !parent.isLeaf() {
-				// parent has a value or has other children, stop
+			if !parent.isLeaf() {
+				// parent has other children, stop
+				break
+			}
+			parent.children = nil
+			if parent.value != nil {
+				// parent has a value, stop
 				break
 			}
 		}
@@ -93,6 +100,30 @@ func (trie *RuneTrie) Delete(key string) bool {
 // The traversal is depth first with no guaranteed order.
 func (trie *RuneTrie) Walk(walker WalkFunc) error {
 	return trie.walk("", walker)
+}
+
+// WalkPath iterates over each key/value in the path in trie from the root to
+// the node at the given key, calling the given walker function for each
+// key/value. If the walker function returns an error, the walk is aborted.
+func (trie *RuneTrie) WalkPath(key string, walker WalkFunc) error {
+	// Get root value if one exists.
+	if trie.value != nil {
+		if err := walker("", trie.value); err != nil {
+			return err
+		}
+	}
+
+	for i, r := range key {
+		if trie = trie.children[r]; trie == nil {
+			return nil
+		}
+		if trie.value != nil {
+			if err := walker(string(key[0:i+1]), trie.value); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // RuneTrie node and the rune key of the child the path descends into.
